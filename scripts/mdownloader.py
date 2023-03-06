@@ -11,12 +11,13 @@ except ImportError:
     is_testing = True
 
 
+MAX_ROWS = 50
+
 MODEL_TYPES = [
     "Stable-diffusion",
     "ControlNet",
     "Lora",
     "deepbooru",
-
 ]
 
 PREDEFINED_MODELS = []
@@ -48,6 +49,11 @@ def convert_bytes(num):
 
 
 def download_model(model_url, model_type, model_filename):
+    if is_model_file_exists(model_type, model_filename):
+        print("Model already downloaded.")
+        yield "Already Downloaded"
+        return
+
     print(f"Downloading model from {model_url}...")
     # Download the model and save it to the models folder, follow redirects
     response = requests.get(model_url, stream=True, allow_redirects=True)
@@ -70,7 +76,7 @@ def download_model(model_url, model_type, model_filename):
     if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
 
-    yield "Downloading..."
+    yield gr.Button.update("Downloading...", variant="secondary")
 
     # Write the file
     wrote = 0
@@ -83,17 +89,22 @@ def download_model(model_url, model_type, model_filename):
                 humanized_total = convert_bytes(total_length)
                 yield gr.Button.update(
                     f"Downloading... ({percentage}% of {humanized_total})",
-                    interactive=False,
                 )
                 f.write(data)
     finally:
         if wrote == total_length:
-            yield gr.Button.update(f"Downloaded", interactive=False)
+            yield gr.Button.update(f"Downloaded")
         else:
-            yield gr.Button.update(f"Download failed. Retry", interactive=True)
+            yield gr.Button.update(f"Download failed. Retry", variant="primary")
 
 
-MAX_ROWS = 50
+def is_model_file_exists(model_type, model_filename):
+    base_dir = "."
+    if not is_testing:
+        base_dir = scripts.get_base_dir()
+
+    model_path = os.path.join(base_dir, "models", model_type, model_filename)
+    return os.path.exists(model_path)
 
 
 def refresh_models(models, model_index_url):
@@ -113,15 +124,29 @@ def refresh_models(models, model_index_url):
     model_descriptions_updates = [
         gr.Markdown.update(models[i]["description"]) for i in range(k)
     ] + [gr.Markdown.update("")] * (MAX_ROWS - k)
-    download_buttons_updates = [
-        gr.Button.update(value="Download", interactive=True) for i in range(k)
-    ] + [gr.Button.update(value="")] * (MAX_ROWS - k)
-    model_urls_updates = [models[i]["url"] for i in range(k)] + [""] * (
-        MAX_ROWS - k
-    )
-    model_types_updates = [models[i]["type"] for i in range(k)] + [""] * (
-        MAX_ROWS - k
-    )
+
+    download_buttons_updates = []
+    for i in range(k):
+        model_type = models[i]["type"]
+        model_filename = models[i]["name"]
+        if is_model_file_exists(model_type, model_filename):
+            download_buttons_updates += [
+                gr.Button.update(
+                    value="Downloaded",
+                    variant="secondary",
+                )
+            ]
+        else:
+            download_buttons_updates += [
+                gr.Button.update(
+                    value="Download",
+                    variant="primary",
+                )
+            ]
+    download_buttons_updates += [gr.Button.update(value="")] * (MAX_ROWS - k)
+
+    model_urls_updates = [models[i]["url"] for i in range(k)] + [""] * (MAX_ROWS - k)
+    model_types_updates = [models[i]["type"] for i in range(k)] + [""] * (MAX_ROWS - k)
     model_filenames_updates = [models[i]["name"] for i in range(k)] + [""] * (
         MAX_ROWS - k
     )
@@ -160,7 +185,9 @@ def add_tab():
         with gr.Column():
             with gr.Row().style(equal_height=True):
                 with gr.Column(scale=80):
-                    model_index_url = gr.Textbox(INITIAL_INDEX_URL, label="Model Index URL")
+                    model_index_url = gr.Textbox(
+                        INITIAL_INDEX_URL, label="Model Index URL"
+                    )
                 with gr.Column(scale=20):
                     refresh_button = gr.Button("Refresh", variant="primary").style(
                         full_width=True
@@ -202,11 +229,27 @@ def add_tab():
                     with gr.Column(scale=50):
                         model_description = gr.Markdown(model["description"])
                     with gr.Column(scale=20):
-                        download_button = download_button = gr.Button("Download")
+                        if not is_model_file_exists(model["type"], model["name"]):
+                            download_button = gr.Button(
+                                "Download",
+                                variant="primary",
+                            ).style(full_width=True)
+                        else:
+                            download_button = gr.Button(
+                                "Downloaded",
+                                variant="secondary",
+                            ).style(full_width=True)
 
                     model_url = gr.State(model["url"])
                     model_type = gr.State(model["type"])
                     model_filename = gr.State(model["name"])
+
+                    model_names.append(model_name)
+                    model_descriptions.append(model_description)
+                    download_buttons.append(download_button)
+                    model_urls.append(model_url)
+                    model_types.append(model_type)
+                    model_filenames.append(model_filename)
 
                 row.visible = row_id < len(models_state.value)
 
@@ -217,12 +260,6 @@ def add_tab():
                 )
 
                 rows.append(row)
-                model_names.append(model_name)
-                model_descriptions.append(model_description)
-                download_buttons.append(download_button)
-                model_urls.append(model_url)
-                model_types.append(model_type)
-                model_filenames.append(model_filename)
 
         refresh_button.click(
             fn=refresh_models,
@@ -241,7 +278,7 @@ def add_tab():
             # Write a simple interface to download models
             model_url = gr.Text(label="URL", value="https://speed.hetzner.de/100MB.bin")
             model_type = gr.Dropdown(
-                ["Stable-diffusion", "ControlNet"],
+                choices=MODEL_TYPES,
                 label="Type",
                 value="Stable-diffusion",
             )
