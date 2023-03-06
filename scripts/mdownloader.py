@@ -78,16 +78,18 @@ def download_model(model_url, model_type, model_filename):
 
     # Write the file
     wrote = 0
+    last_percentage = 0
     try:
         with open(model_path, "wb") as f:
             for data in response.iter_content(block_size):
                 wrote = wrote + len(data)
                 # output download percentage and size in human readable format
                 percentage = int(wrote * 100 / total_length)
-                humanized_total = convert_bytes(total_length)
-                yield gr.Button.update(
-                    f"Downloading... ({percentage}% of {humanized_total})",
-                )
+                if percentage != last_percentage:
+                    humanized_total = convert_bytes(total_length)
+                    yield gr.Button.update(
+                        f"Downloading... ({percentage}% of {humanized_total})",
+                    )
                 f.write(data)
     finally:
         if wrote == total_length:
