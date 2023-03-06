@@ -1,119 +1,265 @@
 import os
+import json
 
 import gradio as gr
 import requests
-import tqdm
 
-from modules import scripts, script_callbacks, progress
-from modules.call_queue import wrap_gradio_call, wrap_gradio_gpu_call
+is_testing = False
+try:
+    from modules import scripts, script_callbacks
+except ImportError:
+    is_testing = True
 
 
-PREDEFINED_MODELS = [
-    {
-        "name": "v2-1_768-ema-pruned.safetensors",
-        "description": "Stable Diffusion v2.1",
-        "url": "https://huggingface.co/stabilityai/stable-diffusion-2-1/resolve/main/v2-1_768-ema-pruned.safetensors",
-        "type": "Stable-diffusion",
-    },
-    {
-        "name": "civitai-DreamShaper-v3.32-pruned.safetensors",
-        "description": "DreamShaper v3.32 Pruned SafeTensor",
-        "url": "https://civitai.com/api/download/models/5636?type=Pruned%20Model&format=SafeTensor",
-        "type": "Stable-diffusion",
-    },
-    {
-        "name": "control_sd15_normal.pth",
-        "description": "ConttrolNet SD v1.5 Normal",
-        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_normal.pth",
-        "type": "ControlNet",
-    },
-    {
-        "name": "control_sd15_scribble.pth",
-        "description": "ConttrolNet SD v1.5 Scribble",
-        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_scribble.pth",
-        "type": "ControlNet",
-    },
-    {
-        "name": "control_sd15_seg.pth",
-        "description": "ConttrolNet SD v1.5 Segmentation",
-        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_seg.pth",
-        "type": "ControlNet",
-    },
+MODEL_TYPES = [
+    "Stable-diffusion",
+    "ControlNet",
+    "Lora",
+    "deepbooru",
+
 ]
 
+PREDEFINED_MODELS = []
 
-def download_model(model_url, model_type, model_filename, progress=gr.Progress(track_tqdm=True)):
+INITIAL_INDEX_URL = "https://raw.githubusercontent.com/zengjie/sd-webui-model-downloader/main/data/index.json"
+
+if is_testing:
+    PREDEFINED_MODELS += [
+        {
+            "name": "demo.bin",
+            "description": "Download a demo model",
+            "url": "http://speedtest.ftp.otenet.gr/files/test10Mb.db",
+            "type": "demo",
+        },
+    ]
+
+    INITIAL_INDEX_URL = "./data/index.json"
+
+
+def convert_bytes(num):
+    """
+    This function takes a number of bytes as input and returns a string
+    representing the equivalent number of KB, MB, GB, or TB.
+    """
+    for x in ["bytes", "KB", "MB", "GB", "TB"]:
+        if num < 1024.0:
+            return "%3.1f %s" % (num, x)
+        num /= 1024.0
+
+
+def download_model(model_url, model_type, model_filename):
+    print(f"Downloading model from {model_url}...")
     # Download the model and save it to the models folder, follow redirects
     response = requests.get(model_url, stream=True, allow_redirects=True)
     total_length = int(response.headers.get("content-length"))
     block_size = 1024 * 1024  # 1 MB
 
-    p = tqdm.tqdm(
-        unit="iB", unit_scale=True, total=total_length, desc="Downloading"
-    )
-
+    # Get the filename from the URL if not provided
     if not model_filename:
         model_filename = model_url.split("/")[-1]
-    model_path = os.path.join(scripts.basedir(), "models", model_type, model_filename)
-    with open(model_path, "wb") as f:
-        for data in response.iter_content(block_size):
-            p.update(len(data))
-            f.write(data)
-    p.close()
 
-    return f"Downloaded"
+    # Get the base directory
+    base_dir = "."
+    if not is_testing:
+        base_dir = scripts.get_base_dir()
+
+    model_path = os.path.join(base_dir, "models", model_type, model_filename)
+
+    # Create the directory if it doesn't exist
+    parent_dir = os.path.dirname(model_path)
+    if not os.path.exists(parent_dir):
+        os.makedirs(parent_dir)
+
+    yield "Downloading..."
+
+    # Write the file
+    wrote = 0
+    try:
+        with open(model_path, "wb") as f:
+            for data in response.iter_content(block_size):
+                wrote = wrote + len(data)
+                # output download percentage and size in human readable format
+                percentage = int(wrote * 100 / total_length)
+                humanized_total = convert_bytes(total_length)
+                yield gr.Button.update(
+                    f"Downloading... ({percentage}% of {humanized_total})",
+                    interactive=False,
+                )
+                f.write(data)
+    finally:
+        if wrote == total_length:
+            yield gr.Button.update(f"Downloaded", interactive=False)
+        else:
+            yield gr.Button.update(f"Download failed. Retry", interactive=True)
+
+
+MAX_ROWS = 50
+
+
+def refresh_models(models, model_index_url):
+    if not is_testing and model_index_url.startswith("http"):
+        models = requests.get(model_index_url).json()
+    else:
+        models = json.load(open(model_index_url))
+
+    k = len(models)
+
+    rows_updates = [gr.Row.update(visible=True)] * k
+    rows_updates += [gr.Row.update(visible=False)] * (MAX_ROWS - k)
+
+    model_names_updates = [
+        gr.HTML.update(f"<pre>{models[i]['name']}</pre>") for i in range(k)
+    ] + [gr.HTML.update("")] * (MAX_ROWS - k)
+    model_descriptions_updates = [
+        gr.Markdown.update(models[i]["description"]) for i in range(k)
+    ] + [gr.Markdown.update("")] * (MAX_ROWS - k)
+    download_buttons_updates = [
+        gr.Button.update(value="Download", interactive=True) for i in range(k)
+    ] + [gr.Button.update(value="")] * (MAX_ROWS - k)
+    model_urls_updates = [models[i]["url"] for i in range(k)] + [""] * (
+        MAX_ROWS - k
+    )
+    model_types_updates = [models[i]["type"] for i in range(k)] + [""] * (
+        MAX_ROWS - k
+    )
+    model_filenames_updates = [models[i]["name"] for i in range(k)] + [""] * (
+        MAX_ROWS - k
+    )
+
+    return (
+        [models]
+        + rows_updates
+        + model_names_updates
+        + model_descriptions_updates
+        + download_buttons_updates
+        + model_urls_updates
+        + model_types_updates
+        + model_filenames_updates
+    )
 
 
 def add_tab():
-    with gr.Blocks("Model Downloader") as tab:
-        gr.HTML(
-            "Download models from the internet and save them to the models folder."
+    tab_css = """
+        #modellist > div {
+            padding: 10px;
+        }
+
+        #modellist > div:nth-child(odd) {
+            background-color: #777;
+        }
+        #modellist > div:nth-child(even) {
+            background-color: #888;
+        }
+    """
+
+    with gr.Blocks("Model Downloader", css=tab_css) as tab:
+        gr.HTML("Download models from the internet and save them to the models folder.")
+
+        models_state = gr.State(PREDEFINED_MODELS)
+
+        with gr.Column():
+            with gr.Row().style(equal_height=True):
+                with gr.Column(scale=80):
+                    model_index_url = gr.Textbox(INITIAL_INDEX_URL, label="Model Index URL")
+                with gr.Column(scale=20):
+                    refresh_button = gr.Button("Refresh", variant="primary").style(
+                        full_width=True
+                    )
+
+            with gr.Row():
+                gr.CheckboxGroup(
+                    ["Downloaded"] + MODEL_TYPES,
+                    value=MODEL_TYPES,
+                    label="Filters",
+                    interactive=True,
+                )
+
+        with gr.Box(elem_id="modellist"):
+            rows = []
+            model_names = []
+            model_descriptions = []
+            download_buttons = []
+            model_urls = []
+            model_types = []
+            model_filenames = []
+
+            # Create fixed number of rows, some of which will be hidden
+            for row_id in range(MAX_ROWS):
+                with gr.Row() as row:
+                    current_row = gr.State(row_id)
+                    try:
+                        model = models_state.value[current_row.value]
+                    except IndexError:
+                        model = {
+                            "name": "",
+                            "description": "",
+                            "url": "",
+                            "type": "",
+                        }
+
+                    with gr.Column(scale=30):
+                        model_name = gr.HTML(f"<pre>{model['name']}</pre>")
+                    with gr.Column(scale=50):
+                        model_description = gr.Markdown(model["description"])
+                    with gr.Column(scale=20):
+                        download_button = download_button = gr.Button("Download")
+
+                    model_url = gr.State(model["url"])
+                    model_type = gr.State(model["type"])
+                    model_filename = gr.State(model["name"])
+
+                row.visible = row_id < len(models_state.value)
+
+                download_button.click(
+                    fn=download_model,
+                    inputs=[model_url, model_type, model_filename],
+                    outputs=download_button,
+                )
+
+                rows.append(row)
+                model_names.append(model_name)
+                model_descriptions.append(model_description)
+                download_buttons.append(download_button)
+                model_urls.append(model_url)
+                model_types.append(model_type)
+                model_filenames.append(model_filename)
+
+        refresh_button.click(
+            fn=refresh_models,
+            inputs=[models_state, model_index_url],
+            outputs=[models_state]
+            + rows
+            + model_names
+            + model_descriptions
+            + download_buttons
+            + model_urls
+            + model_types
+            + model_filenames,
         )
 
-        with gr.Box():
-            # List predefined models and provide a download button
-            for model in PREDEFINED_MODELS:
-                with gr.Row():
-                    with gr.Column(scale=30):
-                        gr.HTML(f"<pre>{model['name']}</pre>")
-                    with gr.Column(scale=40):
-                        gr.Markdown(model["description"])
-                    with gr.Column(scale=10):
-                        download_button = gr.Button("Download")
-                    with gr.Column(scale=20):
-                        download_result = gr.Textbox("", label=">", lines=2, interactive=False)
-
-                model_url = gr.State(model["url"])
-                model_type = gr.State(model["type"])
-                model_filename = gr.State(model["name"])
-                download_button.click(
-                    fn=download_model,
-                    inputs=[model_url, model_type, model_filename],
-                    outputs=download_result,
-                    queue=True,
-                )
-
-
         with gr.Accordion("Manual Download", open=False):
-                # Write a simple interface to download models
-                model_url = gr.Text(
-                    label="URL", value="https://speed.hetzner.de/100MB.bin"
-                )
-                model_type = gr.Dropdown(
-                    ["Stable-diffusion", "ControlNet"], label="Type", value="Stable-diffusion"
-                )
-                model_filename = gr.Text(label="Filename", value="")
-                download_button = gr.Button("Download")
-                download_result = gr.Textbox("", label="Output")
+            # Write a simple interface to download models
+            model_url = gr.Text(label="URL", value="https://speed.hetzner.de/100MB.bin")
+            model_type = gr.Dropdown(
+                ["Stable-diffusion", "ControlNet"],
+                label="Type",
+                value="Stable-diffusion",
+            )
+            model_filename = gr.Text(label="Filename", value="")
+            download_button = gr.Button("Download")
+            download_result = gr.Textbox("", label="Output")
 
-                download_button.click(
-                    fn=download_model,
-                    inputs=[model_url, model_type, model_filename],
-                    outputs=download_result,
-                    queue=True,
-                )
+            download_button.click(
+                fn=download_model,
+                inputs=[model_url, model_type, model_filename],
+                outputs=download_result,
+            )
 
     return [(tab, "Model Downloader", "model_downloader")]
 
 
-script_callbacks.on_ui_tabs(add_tab)
+if not is_testing:
+    script_callbacks.on_ui_tabs(add_tab)
+else:
+    tab = add_tab()[0][0]
+    tab.queue().launch()

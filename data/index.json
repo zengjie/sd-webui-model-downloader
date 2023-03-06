@@ -1,0 +1,87 @@
+
+[
+    {
+        "name": "v2-1_768-ema-pruned.safetensors",
+        "description": "Stable Diffusion v2.1",
+        "url": "https://huggingface.co/stabilityai/stable-diffusion-2-1/resolve/main/v2-1_768-ema-pruned.safetensors",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "DreamShaper-v3.32-pruned.safetensors",
+        "description": "DreamShaper v3.32 Pruned SafeTensor",
+        "url": "https://civitai.com/api/download/models/5636?type=Pruned%20Model&format=SafeTensor",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "Deliberate-v2.safetensors",
+        "description": "Deliberate v2 SafeTensor",
+        "url": "https://civitai.com/api/download/models/15236?type=Model&format=SafeTensor",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "CheeseDaddy-v3.5.safetensors",
+        "description": "Cheese Daddy's Landscapes mix",
+        "url": "https://civitai.com/api/download/models/7304?type=Model&format=SafeTensor",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "AtoZovya-sd1.5-v1.safetensors",
+        "description": "A to Zovya RPG Artist's Tools",
+        "url": "https://civitai.com/api/download/models/10185",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name" : "vinte-protogen-mix-v1.0.safetensors",
+        "description": "VinteProtogenMix",
+        "url": "https://civitai.com/api/download/models/6582?type=Model&format=SafeTensor",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "Protogen-x3.4-pruned.safetensors",
+        "description": "Protogen x3.4 (Photorealism) Official Release",
+        "url": "https://civitai.com/api/download/models/4048?type=Pruned%20Model&format=SafeTensor",
+        "type": "Stable-diffusion"
+    },
+    {
+        "name": "control_sd15_normal.pth",
+        "description": "ConttrolNet SD v1.5 Normal",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_normal.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_scribble.pth",
+        "description": "ConttrolNet SD v1.5 Scribble",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_scribble.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_seg.pth",
+        "description": "ConttrolNet SD v1.5 Segmentation",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_seg.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_openpose.pth",
+        "description": "ConttrolNet SD v1.5 OpenPose",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_openpose.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_depth.pth",
+        "description": "ConttrolNet SD v1.5 Depth",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_depth.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_hed.pth",
+        "description": "ConttrolNet SD v1.5 HED",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_hed.pth",
+        "type": "ControlNet"
+    },
+    {
+        "name": "control_sd15_mlsd.pth",
+        "description": "ConttrolNet SD v1.5 MLSD",
+        "url": "https://huggingface.co/lllyasviel/ControlNet/resolve/main/models/control_sd15_mlsd.pth",
+        "type": "ControlNet"
+    }
+]
