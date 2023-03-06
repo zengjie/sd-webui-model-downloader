@@ -6,7 +6,7 @@ import requests
 
 is_testing = False
 try:
-    from modules import scripts, script_callbacks
+    from modules import script_callbacks
 except ImportError:
     is_testing = True
 
@@ -66,8 +66,6 @@ def download_model(model_url, model_type, model_filename):
 
     # Get the base directory
     base_dir = "."
-    if not is_testing:
-        base_dir = scripts.get_base_dir()
 
     model_path = os.path.join(base_dir, "models", model_type, model_filename)
 
@@ -100,8 +98,6 @@ def download_model(model_url, model_type, model_filename):
 
 def is_model_file_exists(model_type, model_filename):
     base_dir = "."
-    if not is_testing:
-        base_dir = scripts.get_base_dir()
 
     model_path = os.path.join(base_dir, "models", model_type, model_filename)
     return os.path.exists(model_path)
