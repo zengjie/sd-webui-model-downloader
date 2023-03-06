@@ -8,7 +8,7 @@ from modules import scripts, script_callbacks, progress
 from modules.call_queue import wrap_gradio_call, wrap_gradio_gpu_call
 
 
-PREDEINED_MODELS = [
+PREDEFINED_MODELS = [
     {
         "name": "v2-1_768-ema-pruned.safetensors",
         "description": "Stable Diffusion v2.1",
@@ -72,7 +72,7 @@ def add_tab():
 
         with gr.Box():
             # List predefined models and provide a download button
-            for model in PREDEINED_MODELS:
+            for model in PREDEFINED_MODELS:
                 with gr.Row():
                     with gr.Column(scale=30):
                         gr.HTML(f"<pre>{model['name']}</pre>")
