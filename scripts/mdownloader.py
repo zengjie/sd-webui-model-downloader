@@ -488,12 +488,19 @@ def add_tab():
                 value="Stable-diffusion",
             )
             model_filename = gr.Text(label="Filename", value="")
-            download_button = gr.Button("Download")
-            cancel_button = gr.Button("Cancel")
+            with gr.Row():
+                download_button = gr.Button("Download", variant="primary")
+                cancel_button = gr.Button("Cancel", variant="secondary")
 
             download_button.click(
                 fn=download_model,
                 inputs=[model_url, model_type, model_filename],
+                outputs=[download_button, cancel_button],
+            )
+
+            cancel_button.click(
+                fn=delete_model,
+                inputs=[model_type, model_filename],
                 outputs=[download_button, cancel_button],
             )
 
