@@ -417,9 +417,7 @@ def add_tab():
 
             # Create fixed number of rows, some of which will be hidden
             for row_id in range(MAX_ROWS):
-                with gr.Row() as row:
-                    current_row = gr.State(row_id)
-
+                with gr.Row(visible=False) as row:
                     with gr.Column(scale=30):
                         model_name = gr.HTML()
                     with gr.Column(scale=40):
@@ -448,8 +446,6 @@ def add_tab():
                     model_urls.append(model_url)
                     model_types.append(model_type)
                     model_filenames.append(model_filename)
-
-                row.visible = row_id < len(models_state.value)
 
                 download_button.click(
                     fn=download_model,
