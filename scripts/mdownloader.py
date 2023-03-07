@@ -19,7 +19,13 @@ MAX_ROWS = 50
 MODEL_TYPES = [
     "Stable-diffusion",
     "ControlNet",
+    "ESRGAN",
+    "GFPGAN",
+    "LDSR",
     "Lora",
+    "hypernetworks"
+    "VAE",
+    "AVE-approx",
     "deepbooru",
 ]
 
@@ -378,14 +384,6 @@ def add_tab():
                     refresh_button = gr.Button("Refresh", variant="primary").style(
                         full_width=True
                     )
-
-            with gr.Row():
-                gr.CheckboxGroup(
-                    ["Downloaded"] + MODEL_TYPES,
-                    value=MODEL_TYPES,
-                    label="Filters",
-                    interactive=True,
-                )
 
         with gr.Box(elem_id="modellist"):
             rows = []
