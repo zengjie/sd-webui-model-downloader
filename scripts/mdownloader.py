@@ -3,6 +3,7 @@ import json
 import threading
 import enum
 import time
+import shutil
 
 import gradio as gr
 import requests
@@ -240,6 +241,25 @@ def delete_model(model_type, model_filename):
     return [gr.Button.update("Download", visible=True), gr.Button.update(visible=False)]
 
 
+def upload_model(model_files, model_type):
+    for file_obj in model_files:
+        filename = file_obj.name.split("/")[-1]
+        # remove hash after _ from filename but keep the extension
+        original_name = filename.split("_")[0] + os.path.splitext(filename)[1]
+        # Move file to models folder
+        base_dir = "."
+        model_path = os.path.join(base_dir, "models", model_type, original_name)
+
+        parent_dir = os.path.dirname(model_path)
+        if not os.path.exists(parent_dir):
+            os.makedirs(parent_dir)
+
+        file_obj.close()
+        shutil.move(file_obj.name, model_path)
+
+    return gr.Files.update(None), f"Uploaded {len(model_files)} model(s)."
+
+
 def is_model_file_exists(model_type, model_filename):
     base_dir = "."
 
@@ -461,7 +481,7 @@ def add_tab():
 
         with gr.Accordion("Manual Download", open=False):
             # Write a simple interface to download models
-            model_url = gr.Text(label="URL", value="https://speed.hetzner.de/100MB.bin")
+            model_url = gr.Text(label="URL", value="")
             model_type = gr.Dropdown(
                 choices=MODEL_TYPES,
                 label="Type",
@@ -469,12 +489,29 @@ def add_tab():
             )
             model_filename = gr.Text(label="Filename", value="")
             download_button = gr.Button("Download")
-            download_result = gr.Textbox("", label="Output")
+            cancel_button = gr.Button("Cancel")
 
             download_button.click(
                 fn=download_model,
                 inputs=[model_url, model_type, model_filename],
-                outputs=download_result,
+                outputs=[download_button, cancel_button],
+            )
+
+        with gr.Accordion("Upload Model", open=False):
+            # Write a simple interface to upload models
+            model_files = gr.Files(label="Model File")
+            model_type = gr.Dropdown(
+                choices=MODEL_TYPES,
+                label="Type",
+                value="Stable-diffusion",
+            )
+            upload_button = gr.Button("Upload")
+            model_result = gr.HTML()
+
+            upload_button.click(
+                fn=upload_model,
+                inputs=[model_files, model_type],
+                outputs=[model_files, model_result],
             )
 
     return [(tab, "Model Downloader", "model_downloader")]
