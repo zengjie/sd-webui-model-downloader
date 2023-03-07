@@ -51,8 +51,7 @@ def convert_bytes(num):
 def download_model(model_url, model_type, model_filename):
     if is_model_file_exists(model_type, model_filename):
         print("Model already downloaded.")
-        yield "Already Downloaded"
-        return
+        return gr.Button.update("Already Downloaded"), ""
 
     print(f"Downloading model from {model_url}...")
     # Download the model and save it to the models folder, follow redirects
@@ -74,35 +73,28 @@ def download_model(model_url, model_type, model_filename):
     if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
 
-    yield gr.Button.update("Downloading...", variant="secondary")
-
     # Write the file
     wrote = 0
-    last_percentage = 0
     try:
         with open(model_path, "wb") as f:
             for data in response.iter_content(block_size):
                 wrote = wrote + len(data)
-                # output download percentage and size in human readable format
-                percentage = int(wrote * 100 / total_length)
-                if percentage != last_percentage:
-                    humanized_total = convert_bytes(total_length)
-                    yield gr.Button.update(
-                        f"Downloading... ({percentage}% of {humanized_total})",
-                    )
                 f.write(data)
     finally:
         if wrote == total_length:
-            yield gr.Button.update(f"Downloaded")
+            return "Downloaded", ""
         else:
-            yield gr.Button.update(f"Download failed. Retry", variant="primary")
+            return gr.Button.update(f"Download failed. Retry", variant="primary"), ""
 
 
 def is_model_file_exists(model_type, model_filename):
     base_dir = "."
 
     model_path = os.path.join(base_dir, "models", model_type, model_filename)
-    return os.path.exists(model_path)
+    # if the path exists and is a file
+    result = os.path.exists(model_path) and os.path.isfile(model_path)
+
+    return result
 
 
 def refresh_models(models, model_index_url):
@@ -231,11 +223,13 @@ def add_tab():
                             download_button = gr.Button(
                                 "Download",
                                 variant="primary",
+                                elem_id=f"download-button-{row_id}",
                             ).style(full_width=True)
                         else:
                             download_button = gr.Button(
                                 "Downloaded",
                                 variant="secondary",
+                                elem_id=f"download-button-{row_id}",
                             ).style(full_width=True)
 
                     model_url = gr.State(model["url"])
@@ -254,7 +248,8 @@ def add_tab():
                 download_button.click(
                     fn=download_model,
                     inputs=[model_url, model_type, model_filename],
-                    outputs=download_button,
+                    outputs=[download_button, model_filename],
+                    show_progress=True,
                 )
 
                 rows.append(row)
@@ -297,4 +292,4 @@ if not is_testing:
     script_callbacks.on_ui_tabs(add_tab)
 else:
     tab = add_tab()[0][0]
-    tab.queue().launch()
+    tab.launch()
