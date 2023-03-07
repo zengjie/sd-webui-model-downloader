@@ -226,7 +226,6 @@ def download_model(model_url, model_type, model_filename):
         "Cancel", visible=True
     )
 
-
 def delete_model(model_type, model_filename):
     # stop the download task if it's running
     if is_download_task_exists(model_type, model_filename):
@@ -269,6 +268,21 @@ def is_model_file_exists(model_type, model_filename):
 
     return result
 
+def get_download_buttons(model_url, model_type, model_filename):
+    model_status, percentage = get_model_status(
+            model_url, model_type, model_filename
+        )
+
+    buttons = [("Download", True), ("Cancel", False)]
+    if model_status == ModelStatus.Downloading:
+        buttons = [(f"Downloading...({percentage:.1f}%)", True), ("Cancel", True)]
+    elif model_status == ModelStatus.Downloaded:
+        buttons = [("Already Downloaded", False), ("Delete", True)]
+    elif model_status == ModelStatus.Incomplete:
+        buttons = [("Incomplete, Redownload", True), ("Delete", True)]
+
+    return buttons
+
 
 def refresh_models(models, model_index_url):
     if not is_testing and model_index_url.startswith("http"):
@@ -277,6 +291,8 @@ def refresh_models(models, model_index_url):
         models = json.load(open(model_index_url))
 
     k = len(models)
+
+    print("refresh models")
 
     rows_updates = [gr.Row.update(visible=True)] * k
     rows_updates += [gr.Row.update(visible=False)] * (MAX_ROWS - k)
@@ -295,64 +311,14 @@ def refresh_models(models, model_index_url):
         model_type = models[i]["type"]
         model_filename = models[i]["name"]
 
-        model_status, percentage = get_model_status(
-            model_url, model_type, model_filename
+        buttons = get_download_buttons(model_url, model_type, model_filename)
+
+        download_buttons_updates.append(
+            gr.Button.update(buttons[0][0], visible=buttons[0][1])
         )
-
-        if model_status == ModelStatus.Downloading:
-            download_buttons_updates += [
-                gr.Button.update(
-                    value=f"Downloading...({percentage:.1f}%)",
-                    visible=True,
-                )
-            ]
-
-            delete_buttons_updates += [
-                gr.Button.update(
-                    value="Cancel",
-                    visible=True,
-                )
-            ]
-        elif model_status == ModelStatus.Downloaded:
-            download_buttons_updates += [
-                gr.Button.update(
-                    value="Already Downloaded",
-                    visible=False,
-                )
-            ]
-
-            delete_buttons_updates += [
-                gr.Button.update(
-                    value="Delete",
-                    visible=True,
-                )
-            ]
-        elif model_status == ModelStatus.Incomplete:
-            download_buttons_updates += [
-                gr.Button.update(
-                    value="Incomplete, Redownload",
-                    visible=True,
-                )
-            ]
-
-            delete_buttons_updates += [
-                gr.Button.update(
-                    visible=True,
-                )
-            ]
-        else:
-            download_buttons_updates += [
-                gr.Button.update(
-                    value="Download",
-                    visible=True,
-                )
-            ]
-
-            delete_buttons_updates += [
-                gr.Button.update(
-                    visible=False,
-                )
-            ]
+        delete_buttons_updates.append(
+            gr.Button.update(buttons[1][0], visible=buttons[1][1])
+        )
 
     download_buttons_updates += [gr.Button.update(visible=False)] * (MAX_ROWS - k)
     delete_buttons_updates += [gr.Button.update(visible=False)] * (MAX_ROWS - k)
@@ -375,6 +341,13 @@ def refresh_models(models, model_index_url):
         + model_filenames_updates
     )
 
+def refresh_manual_model(model_url, model_type, model_filename):
+    buttons = get_download_buttons(model_url, model_type, model_filename)
+
+    return (
+        gr.Button.update(buttons[0][0], visible=buttons[0][1]),
+        gr.Button.update(buttons[1][0], visible=buttons[1][1]),
+    )
 
 def add_tab():
     tab_css = """
@@ -481,16 +454,16 @@ def add_tab():
 
         with gr.Accordion("Manual Download", open=False):
             # Write a simple interface to download models
-            model_url = gr.Text(label="URL", value="")
+            model_url = gr.Text(label="URL", value="https://civitai.com/api/download/models/19575?type=Model&format=SafeTensor")
             model_type = gr.Dropdown(
                 choices=MODEL_TYPES,
                 label="Type",
                 value="Stable-diffusion",
             )
-            model_filename = gr.Text(label="Filename", value="")
+            model_filename = gr.Text(label="Filename", value="ReV-Animated-v1.1.safetensors")
             with gr.Row():
                 download_button = gr.Button("Download", variant="primary")
-                cancel_button = gr.Button("Cancel", variant="secondary")
+                cancel_button = gr.Button("Cancel", variant="secondary", visible=False)
 
             download_button.click(
                 fn=download_model,
@@ -501,6 +474,12 @@ def add_tab():
             cancel_button.click(
                 fn=delete_model,
                 inputs=[model_type, model_filename],
+                outputs=[download_button, cancel_button],
+            )
+
+            refresh_button.click(
+                fn=refresh_manual_model,
+                inputs=[model_url, model_type, model_filename],
                 outputs=[download_button, cancel_button],
             )
 
