@@ -323,6 +323,7 @@ def refresh_models(models, model_index_url):
 
             delete_buttons_updates += [
                 gr.Button.update(
+                    value="Delete",
                     visible=True,
                 )
             ]
