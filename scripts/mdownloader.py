@@ -1,5 +1,8 @@
 import os
 import json
+import threading
+import enum
+import time
 
 import gradio as gr
 import requests
@@ -19,6 +22,8 @@ MODEL_TYPES = [
     "Lora",
     "deepbooru",
 ]
+
+DOWNLOAD_TASKS = {}
 
 PREDEFINED_MODELS = []
 
@@ -48,12 +53,84 @@ def convert_bytes(num):
         num /= 1024.0
 
 
-def download_model(model_url, model_type, model_filename):
-    if is_model_file_exists(model_type, model_filename):
-        print("Model already downloaded.")
-        return gr.Button.update("Already Downloaded", variant="secondary")
+def get_model_remote_size(model_url):
+    result = None
 
-    print(f"Downloading model from {model_url}...")
+    # load the size from mdownloader_cache.json file if exists
+    if os.path.exists("mdownloader_cache.json"):
+        with open("mdownloader_cache.json", "r") as f:
+            cache = json.load(f)
+            if model_url in cache:
+                return cache[model_url]
+
+    try:
+        # Get the size of the model file
+        response = requests.head(model_url, allow_redirects=True)
+
+        # if HEAD is not supported, use GET
+        if response.status_code != 200:
+            response = requests.get(model_url, stream=True, allow_redirects=True)
+            # Close the connection to avoid memory leak
+            response.close()
+
+        if "Content-Length" in response.headers:
+            result = int(response.headers["Content-Length"])
+        else:
+            print(model_url, "does not have Content-Length header.")
+            result = None
+    except Exception as e:
+        print("Failed to get size of", model_url, e)
+        result = None
+
+    # memorize the size to mdownloader_cache.json file to avoid repeated requests
+    if result:
+        cache = {}
+        if os.path.exists("mdownloader_cache.json"):
+            with open("mdownloader_cache.json", "r") as f:
+                cache = json.load(f)
+        cache[model_url] = result
+        with open("mdownloader_cache.json", "w") as f:
+            json.dump(cache, f)
+
+    return result
+
+
+def get_model_local_size(model_type, model_filename):
+    base_dir = "."
+    model_path = os.path.join(base_dir, "models", model_type, model_filename)
+    if os.path.exists(model_path):
+        return os.path.getsize(model_path)
+    else:
+        return None
+
+
+def add_download_task(model_type, model_filename):
+    DOWNLOAD_TASKS[model_type + "/" + model_filename] = True
+
+
+def stop_download_task(model_type, model_filename):
+    DOWNLOAD_TASKS[model_type + "/" + model_filename] = False
+    while 1:
+        if not is_download_task_exists(model_type, model_filename):
+            break
+        time.sleep(0.1)
+
+
+def should_stop_download_task(model_type, model_filename):
+    return not DOWNLOAD_TASKS[model_type + "/" + model_filename]
+
+
+def remove_download_task(model_type, model_filename):
+    DOWNLOAD_TASKS.pop(model_type + "/" + model_filename, None)
+
+
+def is_download_task_exists(model_type, model_filename):
+    return (model_type + "/" + model_filename) in DOWNLOAD_TASKS
+
+
+def _download_model_worker(model_url, model_type, model_filename):
+    add_download_task(model_type, model_filename)
+
     # Download the model and save it to the models folder, follow redirects
     response = requests.get(model_url, stream=True, allow_redirects=True)
     total_length = int(response.headers.get("content-length"))
@@ -65,7 +142,6 @@ def download_model(model_url, model_type, model_filename):
 
     # Get the base directory
     base_dir = "."
-
     model_path = os.path.join(base_dir, "models", model_type, model_filename)
 
     # Create the directory if it doesn't exist
@@ -78,13 +154,84 @@ def download_model(model_url, model_type, model_filename):
     try:
         with open(model_path, "wb") as f:
             for data in response.iter_content(block_size):
+                if should_stop_download_task(model_type, model_filename):
+                    break
                 wrote = wrote + len(data)
                 f.write(data)
     finally:
-        if wrote == total_length:
-            return gr.Button.update("Downloaded", variant="secondary")
+        remove_download_task(model_type, model_filename)
+        if wrote != total_length:
+            # Delete the file if it's incomplete
+            os.remove(model_path)
+
+
+class ModelStatus(enum.Enum):
+    NotDownloaded = 0
+    Downloaded = 1
+    Downloading = 2
+    Incomplete = 3
+
+
+def get_model_status(model_url, model_type, model_filename):
+    remote_size = get_model_remote_size(model_url)
+    local_size = get_model_local_size(model_type, model_filename)
+
+    percentage = 0
+    if remote_size and local_size:
+        percentage = local_size * 100 / remote_size
+
+    if is_download_task_exists(model_type, model_filename):
+        return ModelStatus.Downloading, percentage
+
+    if is_model_file_exists(model_type, model_filename):
+        if get_model_remote_size(model_url) == get_model_local_size(
+            model_type, model_filename
+        ):
+            return ModelStatus.Downloaded, percentage
         else:
-            return gr.Button.update(f"Download failed. Retry", variant="primary")
+            return ModelStatus.Incomplete, percentage
+
+    return ModelStatus.NotDownloaded, percentage
+
+
+def download_model(model_url, model_type, model_filename):
+    model_status, _ = get_model_status(model_url, model_type, model_filename)
+    if model_status == ModelStatus.Downloaded:
+        print("Model has already been downloaded.")
+        return gr.Button.update(
+            "Already Downloaded", variant="secondary"
+        ), gr.Button.update(visible=True)
+
+    if model_status == ModelStatus.Downloading:
+        return gr.Button.update(
+            "Downloading...", variant="secondary"
+        ), gr.Button.update("Cancel", visible=True)
+
+    print(f"Downloading model from {model_url}...")
+    # Download the model in a separate thread
+    t = threading.Thread(
+        target=_download_model_worker,
+        args=(model_url, model_type, model_filename),
+    )
+    t.start()
+
+    return gr.Button.update("Downloading...", variant="secondary"), gr.Button.update(
+        "Cancel", visible=True
+    )
+
+
+def delete_model(model_type, model_filename):
+    # stop the download task if it's running
+    if is_download_task_exists(model_type, model_filename):
+        stop_download_task(model_type, model_filename)
+
+    # delete the model file if it exists
+    base_dir = "."
+    model_path = os.path.join(base_dir, "models", model_type, model_filename)
+    if os.path.exists(model_path):
+        os.remove(model_path)
+
+    return [gr.Button.update("Download", visible=True), gr.Button.update(visible=False)]
 
 
 def is_model_file_exists(model_type, model_filename):
@@ -116,24 +263,72 @@ def refresh_models(models, model_index_url):
     ] + [gr.Markdown.update("")] * (MAX_ROWS - k)
 
     download_buttons_updates = []
+    delete_buttons_updates = []
     for i in range(k):
+        model_url = models[i]["url"]
         model_type = models[i]["type"]
         model_filename = models[i]["name"]
-        if is_model_file_exists(model_type, model_filename):
+
+        model_status, percentage = get_model_status(
+            model_url, model_type, model_filename
+        )
+
+        if model_status == ModelStatus.Downloading:
             download_buttons_updates += [
                 gr.Button.update(
-                    value="Downloaded",
-                    variant="secondary",
+                    value=f"Downloading...({percentage:.1f}%)",
+                    visible=True,
+                )
+            ]
+
+            delete_buttons_updates += [
+                gr.Button.update(
+                    value="Cancel",
+                    visible=True,
+                )
+            ]
+        elif model_status == ModelStatus.Downloaded:
+            download_buttons_updates += [
+                gr.Button.update(
+                    value="Already Downloaded",
+                    visible=False,
+                )
+            ]
+
+            delete_buttons_updates += [
+                gr.Button.update(
+                    visible=True,
+                )
+            ]
+        elif model_status == ModelStatus.Incomplete:
+            download_buttons_updates += [
+                gr.Button.update(
+                    value="Incomplete, Redownload",
+                    visible=True,
+                )
+            ]
+
+            delete_buttons_updates += [
+                gr.Button.update(
+                    visible=True,
                 )
             ]
         else:
             download_buttons_updates += [
                 gr.Button.update(
                     value="Download",
-                    variant="primary",
+                    visible=True,
                 )
             ]
-    download_buttons_updates += [gr.Button.update(value="")] * (MAX_ROWS - k)
+
+            delete_buttons_updates += [
+                gr.Button.update(
+                    visible=False,
+                )
+            ]
+
+    download_buttons_updates += [gr.Button.update(visible=False)] * (MAX_ROWS - k)
+    delete_buttons_updates += [gr.Button.update(visible=False)] * (MAX_ROWS - k)
 
     model_urls_updates = [models[i]["url"] for i in range(k)] + [""] * (MAX_ROWS - k)
     model_types_updates = [models[i]["type"] for i in range(k)] + [""] * (MAX_ROWS - k)
@@ -147,6 +342,7 @@ def refresh_models(models, model_index_url):
         + model_names_updates
         + model_descriptions_updates
         + download_buttons_updates
+        + delete_buttons_updates
         + model_urls_updates
         + model_types_updates
         + model_filenames_updates
@@ -196,6 +392,7 @@ def add_tab():
             model_names = []
             model_descriptions = []
             download_buttons = []
+            delete_buttons = []
             model_urls = []
             model_types = []
             model_filenames = []
@@ -204,41 +401,32 @@ def add_tab():
             for row_id in range(MAX_ROWS):
                 with gr.Row() as row:
                     current_row = gr.State(row_id)
-                    try:
-                        model = models_state.value[current_row.value]
-                    except IndexError:
-                        model = {
-                            "name": "",
-                            "description": "",
-                            "url": "",
-                            "type": "",
-                        }
 
                     with gr.Column(scale=30):
-                        model_name = gr.HTML(f"<pre>{model['name']}</pre>")
-                    with gr.Column(scale=50):
-                        model_description = gr.Markdown(model["description"])
-                    with gr.Column(scale=20):
-                        if not is_model_file_exists(model["type"], model["name"]):
+                        model_name = gr.HTML()
+                    with gr.Column(scale=40):
+                        model_description = gr.Markdown()
+                    with gr.Column(scale=30):
+                        with gr.Row():
                             download_button = gr.Button(
                                 "Download",
                                 variant="primary",
-                                elem_id=f"download-button-{row_id}",
-                            ).style(full_width=True)
-                        else:
-                            download_button = gr.Button(
-                                "Downloaded",
+                                visible=False,
+                            )
+                            delete_button = gr.Button(
+                                "Delete",
                                 variant="secondary",
-                                elem_id=f"download-button-{row_id}",
-                            ).style(full_width=True)
+                                visible=False,
+                            )
 
-                    model_url = gr.State(model["url"])
-                    model_type = gr.State(model["type"])
-                    model_filename = gr.State(model["name"])
+                    model_url = gr.State()
+                    model_type = gr.State()
+                    model_filename = gr.State()
 
                     model_names.append(model_name)
                     model_descriptions.append(model_description)
                     download_buttons.append(download_button)
+                    delete_buttons.append(delete_button)
                     model_urls.append(model_url)
                     model_types.append(model_type)
                     model_filenames.append(model_filename)
@@ -248,8 +436,13 @@ def add_tab():
                 download_button.click(
                     fn=download_model,
                     inputs=[model_url, model_type, model_filename],
-                    outputs=[download_button],
-                    show_progress=True,
+                    outputs=[download_button, delete_button],
+                )
+
+                delete_button.click(
+                    fn=delete_model,
+                    inputs=[model_type, model_filename],
+                    outputs=[download_button, delete_button],
                 )
 
                 rows.append(row)
@@ -262,6 +455,7 @@ def add_tab():
             + model_names
             + model_descriptions
             + download_buttons
+            + delete_buttons
             + model_urls
             + model_types
             + model_filenames,
