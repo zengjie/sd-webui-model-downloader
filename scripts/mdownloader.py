@@ -465,7 +465,7 @@ def add_tab():
 
                 rows.append(row)
 
-        refresh_button.click(
+        refresh_kwargs = dict(
             fn=refresh_models,
             inputs=[models_state, model_index_url],
             outputs=[models_state]
@@ -478,6 +478,9 @@ def add_tab():
             + model_types
             + model_filenames,
         )
+
+        refresh_button.click(**refresh_kwargs)
+        tab.load(**refresh_kwargs)
 
         with gr.Accordion("Manual Download", open=False):
             # Write a simple interface to download models
