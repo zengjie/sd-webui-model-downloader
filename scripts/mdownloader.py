@@ -51,7 +51,7 @@ def convert_bytes(num):
 def download_model(model_url, model_type, model_filename):
     if is_model_file_exists(model_type, model_filename):
         print("Model already downloaded.")
-        return gr.Button.update("Already Downloaded"), ""
+        return gr.Button.update("Already Downloaded", variant="secondary")
 
     print(f"Downloading model from {model_url}...")
     # Download the model and save it to the models folder, follow redirects
@@ -82,9 +82,9 @@ def download_model(model_url, model_type, model_filename):
                 f.write(data)
     finally:
         if wrote == total_length:
-            return "Downloaded", ""
+            return gr.Button.update("Downloaded", variant="secondary")
         else:
-            return gr.Button.update(f"Download failed. Retry", variant="primary"), ""
+            return gr.Button.update(f"Download failed. Retry", variant="primary")
 
 
 def is_model_file_exists(model_type, model_filename):
@@ -248,7 +248,7 @@ def add_tab():
                 download_button.click(
                     fn=download_model,
                     inputs=[model_url, model_type, model_filename],
-                    outputs=[download_button, model_filename],
+                    outputs=[download_button],
                     show_progress=True,
                 )
 
